@@ -1,93 +1,84 @@
 /**
  * 每日一遍，手写promise
  */
-
 function MyPromise(fn) {
     let state = 'pending';
+    let callbacks = []; // { resolve, reject, onFullfilled, onRejectd }
     let value = null;
-    let callbacks = []; // 数据结构 { onRejected, onFullfilled, resolve, reject }
 
     function handleCallback(callback) {
         if (state === 'pending') {
-            // 挂载 阶段
             callbacks.push(callback);
             return;
         }
         const cb = state === 'fullfilled' ? callback.onFullfilled : callback.onRejected;
         if (!cb) {
-            // Promise.resolve 的声明模式
-            const PCB = state === 'fullfilled' ? callback.resolve : callback.reject;
-            PCB(value);
+            const promiseCb = state === 'fullfilled' ? callback.resolve : callback.reject;
+            promiseCb(value);
             return;
         }
         try {
-            const returnValue = cb(value);
-            callback.resolve(returnValue);
-        } catch (error) {
-            callback.reject(error)
+            const ret = cb(value);
+            // 二次注册,变更值
+            callback.resolve(ret);
+        } catch (e) {
+            callback.reject(e);
         }
     }
 
     function resolve(newValue) {
         if (typeof newValue === 'object' && newValue instanceof MyPromise) {
-            // 将内部状态机传入
             newValue.then(resolve, reject);
             return;
         }
         state = 'fullfilled';
         value = newValue;
-        callbacks.forEach(element => {
-            handleCallback(element);
-        });
+        // 执行 callback
+        callbacks.forEach(callback => handleCallback(callback));
     }
 
-    function reject(newValue) {
+    function reject(error) {
         state = 'rejected';
-        value = newValue;
-        callbacks.forEach(element => {
-            handleCallback(element);
-        });
+        value = error;
+        callbacks.forEach(callback => handleCallback(callback));
     }
 
     this.then = function(onFullfilled, onRejected) {
+        // 二次对象抛出注册
         return new MyPromise((resolve, reject) => {
-            handleCallback({ reject, resolve, onFullfilled, onRejected });
+            handleCallback({ reject, resolve, onRejected, onFullfilled })
         });
-    };
+    }
 
-    this.catch = function(onCatch) {
-        return this.then(null, onCatch);
-    };
+    this.catch = function(onError) {
+        return this.then(null, onError); // 返回？还是不返回
+    }
 
     this.finally = function(onFinally) {
-        return this.then((res) => {
-            return MyPromise.resolve(onFinally()).then(() => res);
+        // 创建一个100% resolve的callback
+        this.then((newValue) => {
+            MyPromise.resolve(onFinally()).then(() => newValue);
         }, (error) => {
-            return MyPromise.resolve(onFinally()).then(() => {
-                if (error instanceof Error ) {
-                    throw error;
-                } else {
-                    throw new Error(error);
-                }
+            MyPromise.resolve(onFinally()).then(() => {
+                throw new Error(error);
             });
         });
-    };
+    }
 
     fn(resolve, reject);
 }
 
-MyPromise.resolve = function(value) {
+MyPromise.resolve = function(data) {
     return new MyPromise((resolve, reject) => {
-        resolve(value);
+        resolve(data);
     });
 }
 
-MyPromise.reject = function(value) {
+MyPromise.reject = function(erorr) {
     return new MyPromise((resolve, reject) => {
-        reject(value);
+        reject(error);
     });
 }
-
 
 
 const promise = new MyPromise((resolve, reject) => {
